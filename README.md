@@ -33,7 +33,7 @@ Pastikan Anda memiliki **Python 3.7+** terinstal di sistem Anda.
 
 2.  **Masuk ke Direktori Proyek**
     ```bash
-    cd nama-folder-proyek
+    cd thumbnailpro
     ```
 
 3.  **Instal Dependensi**
