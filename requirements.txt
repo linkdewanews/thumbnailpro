@@ -1,0 +1,4 @@
+flet
+opencv-python
+Pillow
+numpy
