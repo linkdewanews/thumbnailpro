@@ -11,7 +11,7 @@ import subprocess
 import numpy as np
 
 # =================================================================================================
-# BAGIAN 1: FUNGSI LOGIKA UTAMA
+# BAGIAN 1: FUNGSI LOGIKA UTAMA (Dengan Mitigasi Error)
 # =================================================================================================
 
 def open_folder_in_explorer(path):
@@ -56,40 +56,52 @@ def process_videos_in_thread(page, folder_path_input, aspect_ratio_choice, water
         if watermark_text: log(f"Watermark: '{watermark_text}' di {watermark_pos}", icon=ft.Icons.BRANDING_WATERMARK, color="#22d3ee")
         video_files = [f for f in os.listdir(folder_path_input) if os.path.isfile(os.path.join(folder_path_input, f)) and f.lower().endswith(('.mp4', '.mkv', '.avi', '.mov', '.webm'))]
         if not video_files: log("Tidak ada file video ditemukan.", icon=ft.Icons.WARNING_AMBER_ROUNDED, color=ft.Colors.AMBER_300); progress_bar.value = 0; progress_text.value = "Gagal"
+        
         for i, filename in enumerate(video_files):
             progress_value = (i + 1) / len(video_files); progress_bar.value = progress_value; progress_text.value = f"{progress_value:.0%}"; page.update()
-            file_name_no_ext = os.path.splitext(filename)[0]
-            specific_result_folder = os.path.join(main_output_folder, file_name_no_ext)
-            if os.path.exists(specific_result_folder): log(f"'{filename}' sudah ada, dilewati.", icon=ft.Icons.CHECK_CIRCLE_OUTLINE_ROUNDED, color=ft.Colors.GREEN_ACCENT_400); continue
-            log(f"Memproses '{filename}'...", icon=ft.Icons.ROCKET_LAUNCH_OUTLINED, color=ft.Colors.CYAN_300)
-            os.makedirs(specific_result_folder, exist_ok=True)
-            vid = cv2.VideoCapture(os.path.join(folder_path_input, filename))
-            total_frames = int(vid.get(cv2.CAP_PROP_FRAME_COUNT))
-            vid.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
-            ret_orig, frame_orig_bgr = vid.read()
-            if ret_orig:
-                img_orig = Image.fromarray(cv2.cvtColor(frame_orig_bgr, cv2.COLOR_BGR2RGB)).resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
-                img_orig = apply_watermark(img_orig, watermark_text, watermark_pos)
-                img_orig.save(os.path.join(specific_result_folder, "thumbnail_original.jpg"))
-            collage_frames = [Image.fromarray(cv2.cvtColor(vid.read()[1], cv2.COLOR_BGR2RGB)) for i_frame in range(cols*rows) if vid.set(cv2.CAP_PROP_POS_FRAMES, math.floor(total_frames * (i_frame + 1) / ((cols*rows) + 1))) and vid.read()[0]]
-            if not collage_frames: raise Exception("Gagal ambil frame.")
-            if len(collage_frames) < cols*rows: 
-                log(f"Video '{filename}' pendek, frame diduplikasi.", icon=ft.Icons.INFO_OUTLINE_ROUNDED, color=ft.Colors.AMBER_300)
-                i_dup = 0
-                while len(collage_frames) < cols*rows: collage_frames.append(collage_frames[i_dup]); i_dup = (i_dup + 1) % len(collage_frames)
-            collage_image = Image.new('RGB', (thumb_w, thumb_h))
-            cell_w, cell_h = thumb_w // cols, thumb_h // rows
-            for idx, frame in enumerate(collage_frames):
-                frame = frame.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
-                collage_image.paste(frame, ((idx % cols) * cell_w, (idx // rows) * cell_h))
-            collage_image = apply_watermark(collage_image, watermark_text, watermark_pos)
-            collage_image.save(os.path.join(specific_result_folder, f"thumbnail_collage_{cols}x{rows}.jpg"))
-            vid.release()
-            shutil.move(os.path.join(folder_path_input, filename), os.path.join(specific_result_folder, filename))
-        log("Semua video selesai diproses!", icon=ft.Icons.CELEBRATION_ROUNDED, color="#10B981")
+            
+            try: # --- BLOK TRY-EXCEPT BARU UNTUK SETIAP VIDEO ---
+                file_name_no_ext = os.path.splitext(filename)[0]
+                specific_result_folder = os.path.join(main_output_folder, file_name_no_ext)
+                if os.path.exists(specific_result_folder): log(f"'{filename}' sudah ada, dilewati.", icon=ft.Icons.CHECK_CIRCLE_OUTLINE_ROUNDED, color=ft.Colors.GREEN_ACCENT_400); continue
+                log(f"Memproses '{filename}'...", icon=ft.Icons.ROCKET_LAUNCH_OUTLINED, color=ft.Colors.CYAN_300)
+                os.makedirs(specific_result_folder, exist_ok=True)
+                vid = cv2.VideoCapture(os.path.join(folder_path_input, filename))
+                if not vid.isOpened(): raise Exception("File video tidak bisa dibuka atau korup.")
+                total_frames = int(vid.get(cv2.CAP_PROP_FRAME_COUNT))
+                vid.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
+                ret_orig, frame_orig_bgr = vid.read()
+                if ret_orig:
+                    img_orig = Image.fromarray(cv2.cvtColor(frame_orig_bgr, cv2.COLOR_BGR2RGB)).resize((thumb_w, thumb_h), Image.Resampling.LANCZOS)
+                    img_orig = apply_watermark(img_orig, watermark_text, watermark_pos)
+                    img_orig.save(os.path.join(specific_result_folder, "thumbnail_original.jpg"))
+                collage_frames = [Image.fromarray(cv2.cvtColor(vid.read()[1], cv2.COLOR_BGR2RGB)) for i_frame in range(cols*rows) if vid.set(cv2.CAP_PROP_POS_FRAMES, math.floor(total_frames * (i_frame + 1) / ((cols*rows) + 1))) and vid.read()[0]]
+                if not collage_frames: raise Exception("Gagal mengambil frame untuk kolase.")
+                if len(collage_frames) < cols*rows: 
+                    log(f"Video '{filename}' pendek, frame diduplikasi.", icon=ft.Icons.INFO_OUTLINE_ROUNDED, color=ft.Colors.AMBER_300)
+                    i_dup = 0
+                    while len(collage_frames) < cols*rows: collage_frames.append(collage_frames[i_dup]); i_dup = (i_dup + 1) % len(collage_frames)
+                collage_image = Image.new('RGB', (thumb_w, thumb_h))
+                cell_w, cell_h = thumb_w // cols, thumb_h // rows
+                for idx, frame in enumerate(collage_frames):
+                    frame = frame.resize((cell_w, cell_h), Image.Resampling.LANCZOS)
+                    collage_image.paste(frame, ((idx % cols) * cell_w, (idx // rows) * cell_h))
+                collage_image = apply_watermark(collage_image, watermark_text, watermark_pos)
+                collage_image.save(os.path.join(specific_result_folder, f"thumbnail_collage_{cols}x{rows}.jpg"))
+                vid.release()
+                shutil.move(os.path.join(folder_path_input, filename), os.path.join(specific_result_folder, filename))
+            except Exception as e:
+                log(f"Gagal proses '{filename}': {e}", icon=ft.Icons.ERROR_OUTLINE_ROUNDED, color=ft.Colors.RED_ACCENT_400)
+                continue # --- LANJUT KE VIDEO BERIKUTNYA ---
+
+        log("Semua tugas selesai!", icon=ft.Icons.CELEBRATION_ROUNDED, color="#10B981")
         open_folder_button.data = main_output_folder; open_folder_button.disabled = False
-    except Exception as e: log(f"ERROR: {e}", icon=ft.Icons.ERROR_OUTLINE_ROUNDED, color=ft.Colors.RED_ACCENT_400); progress_bar.value = 0; progress_text.value = "Error!"
-    finally: process_button.disabled = False; page.update()
+        
+    except Exception as e: # Penangkap error fatal di luar loop
+        log(f"ERROR FATAL: {e}", icon=ft.Icons.ERROR_OUTLINE_ROUNDED, color=ft.Colors.RED_ACCENT_400)
+        progress_bar.value = 0; progress_text.value = "Error!"
+    finally:
+        process_button.disabled = False; page.update()
 
 # =================================================================================================
 # BAGIAN 2: DESAIN FINAL (Layout Dua Kolom)
